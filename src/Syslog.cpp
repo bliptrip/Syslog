@@ -6,53 +6,15 @@
 
 // Public Methods //////////////////////////////////////////////////////////////
 
-Syslog::Syslog(UDP &client, uint8_t protocol) {
-  this->_client = &client;
-  this->_protocol = protocol;
-  this->_server = NULL;
-  this->_port = 0;
-  this->_deviceHostname = SYSLOG_NILVALUE;
-  this->_appName = SYSLOG_NILVALUE;
-  this->_priDefault = LOG_KERN;
-}
 
-Syslog::Syslog(UDP &client, const char* server, uint16_t port, const char* deviceHostname, const char* appName, uint16_t priDefault, uint8_t protocol) {
-  this->_client = &client;
+Syslog(Stream &fh, timestampFunc tfunc = NULL, const char* hostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
+  this->_fh = &fh;
   this->_protocol = protocol;
-  this->_server = server;
-  this->_port = port;
-  this->_deviceHostname = (deviceHostname == NULL) ? SYSLOG_NILVALUE : deviceHostname;
   this->_appName = (appName == NULL) ? SYSLOG_NILVALUE : appName;
   this->_priDefault = priDefault;
-}
-
-Syslog::Syslog(UDP &client, IPAddress ip, uint16_t port, const char* deviceHostname, const char* appName, uint16_t priDefault, uint8_t protocol) {
-  this->_client = &client;
-  this->_protocol = protocol;
-  this->_ip = ip;
-  this->_server = NULL;
-  this->_port = port;
-  this->_deviceHostname = (deviceHostname == NULL) ? SYSLOG_NILVALUE : deviceHostname;
-  this->_appName = (appName == NULL) ? SYSLOG_NILVALUE : appName;
-  this->_priDefault = priDefault;
-}
-
-Syslog &Syslog::server(const char* server, uint16_t port) {
-  this->_server = server;
-  this->_port = port;
-  return *this;
-}
-
-Syslog &Syslog::server(IPAddress ip, uint16_t port) {
-  this->_ip = ip;
-  this->_server = NULL;
-  this->_port = port;
-  return *this;
-}
-
-Syslog &Syslog::deviceHostname(const char* deviceHostname) {
-  this->_deviceHostname = (deviceHostname == NULL) ? SYSLOG_NILVALUE : deviceHostname;
-  return *this;
+  this->_tfunc = tfunc;
+  this->_deviceHostname = hostname;
+  this->setLogLevel(logLevel);
 }
 
 Syslog &Syslog::appName(const char* appName) {
@@ -70,6 +32,17 @@ Syslog &Syslog::logMask(uint8_t priMask) {
   return *this;
 }
 
+Syslog &Syslog::setLogLevel(uint16_t level) {
+  uint8_t mask;
+  this->_logLevel = level;
+  mask = LOG_PRI(level);
+  this->_priMask = mask | (mask-1); //Anything at this level or lower will be masked for display
+  return *this;
+}
+
+uint16_t Syslog::getLogLevel(void) {
+  return(this->_logLevel);
+}
 
 bool Syslog::log(uint16_t pri, const __FlashStringHelper *message) {
   return this->_sendLog(pri, message);
@@ -187,95 +160,105 @@ bool Syslog::log(const char *message) {
 
 // Private Methods /////////////////////////////////////////////////////////////
 
-inline bool Syslog::_sendLog(uint16_t pri, const char *message) {
-  int result;
-
-  if ((this->_server == NULL && this->_ip == INADDR_NONE) || this->_port == 0)
-    return false;
+inline bool Syslog::_sendHeader(uint16_t pri, const char* procid, const char* msgid) {
+  char* timestampBuf[40];
 
   // Check priority against priMask values.
   if ((LOG_MASK(LOG_PRI(pri)) & this->_priMask) == 0)
-    return true;
+    return false; //Indicates that we were booted out
 
   // Set default facility if none specified.
   if ((pri & LOG_FACMASK) == 0)
     pri = LOG_MAKEPRI(LOG_FAC(this->_priDefault), pri);
 
-  if (this->_server != NULL) {
-    result = this->_client->beginPacket(this->_server, this->_port);
-  } else {
-    result = this->_client->beginPacket(this->_ip, this->_port);
-  }
-
-  if (result != 1)
-    return false;
-
   // IETF Doc: https://tools.ietf.org/html/rfc5424
   // BSD Doc: https://tools.ietf.org/html/rfc3164
-  this->_client->print('<');
-  this->_client->print(pri);
+  this->_fh->print('<');
+  this->_fh->print(pri);
   if (this->_protocol == SYSLOG_PROTO_IETF) {
-    this->_client->print(F(">1 - "));
+    this->_fh->print(F(">1 "));
+    if( NULL == this._tfunc ) {
+        this->_fh->print(F(SYSLOG_NILVALUE));
+    } else {
+        this->_tfunc(timestampBuf, (size_t)sizeof(timestampBuf));
+    }
   } else {
-    this->_client->print(F(">"));
+    this->_fh->print(F(">"));
   }
-  this->_client->print(this->_deviceHostname);
-  this->_client->print(' ');
-  this->_client->print(this->_appName);
+  this->_fh->print(this->_deviceHostname);
+  this->_fh->print(' ');
+  this->_fh->print(this->_appName);
   if (this->_protocol == SYSLOG_PROTO_IETF) {
-    this->_client->print(F(" - - - \xEF\xBB\xBF"));
+    this->_fh->print(" ");
+    this->_fh->print(procid);
+    this->_fh->print(" ");
+    this->_fh->print(msgid);
+    this->_fh->print(" ");
   } else {
-    this->_client->print(F("[0]: "));
+    this->_fh->print(F("[0]: "));
   }
-  this->_client->print(message);
-  this->_client->endPacket();
+  this->_fh->print(message);
 
   return true;
 }
 
-inline bool Syslog::_sendLog(uint16_t pri, const __FlashStringHelper *message) {
-  int result;
+//Send structured data
+inline bool Syslog::_sendSds(sdIds* sds) {
+    this->_fh->print(F(" "));
+    if( (NULL == sds) || (sds->empty()) ) {
+        this->_fh->print(F(SYSLOG_NILVALUE));
+    } else {
+        for (const auto& [sdId, sdEls] : *sds) {
+            if( !sdEls.empty() ) {
+                this->_fh->print(F("["));
+                this->_fh->print(sdId);
+                for (const auto& [sdPName, sdPValue] : sdEls) {
+                    this->_fh->print(F(" "));
+                    this->_fh->print(sdPName);
+                    this->_fh->print(F('="'));
+                    this->_fh->print(sdPValue);
+                    this->_fh->print(F('"'));
+                }
+                this->_fh->print("]");
+            }
+        }
+    }
+    this->_fh->print(F(" "));
 
-  if ((this->_server == NULL && this->_ip == INADDR_NONE) || this->_port == 0)
-    return false;
+    return(true);
+}
 
-  // Check priority against priMask values.
-  if ((LOG_MASK(LOG_PRI(pri)) & this->_priMask) == 0)
-    return true;
+bool Syslog::_sendLog(uint16_t pri, const char *message, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE) {
+  bool result;
 
-  // Set default facility if none specified.
-  if ((pri & LOG_FACMASK) == 0)
-    pri = LOG_MAKEPRI(LOG_FAC(this->_priDefault), pri);
-
-  if (this->_server != NULL) {
-    result = this->_client->beginPacket(this->_server, this->_port);
-  } else {
-    result = this->_client->beginPacket(this->_ip, this->_port);
+  result = _sendHeader(pri, procid, msgid);
+  if( false != result ) {
+    if (this->_protocol == SYSLOG_PROTO_IETF) {
+        _sendSds(sds);
+        if( strlen(message) != 0 ) {
+            this->_fh->print(F("\xEF\xBB\xBF")); //No structured data
+        }
+    } else {
+        this->_fh->print(F("[0]: "));
+    }
+    this->_fh->print(message);
   }
 
-  if (result != 1)
-    return false;
+  return(result);
+}
 
-  // IETF Doc: https://tools.ietf.org/html/rfc5424
-  // BSD Doc: https://tools.ietf.org/html/rfc3164
-  this->_client->print('<');
-  this->_client->print(pri);
-  if (this->_protocol == SYSLOG_PROTO_IETF) {
-    this->_client->print(F(">1 - "));
-  } else {
-    this->_client->print(F(">"));
-  }
-  this->_client->print(this->_deviceHostname);
-  this->_client->print(' ');
-  this->_client->print(this->_appName);
-  if (this->_protocol == SYSLOG_PROTO_IETF) {
-    this->_client->print(F(" - - - \xEF\xBB\xBF"));
-  } else {
-    this->_client->print(F("[0]: "));
-  }
-  this->_client->print(message);
-  this->_client->endPacket();
+bool Syslog::_sendLog(uint16_t pri, const __FlashStringHelper *message, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE) {
+    return(_sendLog(pri, (const char *)message, sdIds, procid, msgid));
+}
 
+bool Syslog::_sendLog(uint16_t pri, const char* message, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE) {
+    return(_sendLog(pri, message, sdIds, procid, msgid, sdIds)); //Empty message
+}
 
-  return true;
+bool Syslog::_sendLog(uint16_t pri, const __FlashStringHelper *message, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE) {
+    return(_sendLog(pri, (const char*)message, sdIds, procid, msgid)); //Empty message
+}
+
+bool Syslog::_sendLog(uint16_t pri, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE) {
+    return(_sendLog(pri, F(""), sdIds, procid, msgid)); //Empty message
 }

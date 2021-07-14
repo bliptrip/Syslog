@@ -5,7 +5,6 @@
 #include <inttypes.h>
 #include <WString.h>
 #include <IPAddress.h>
-#include <Udp.h>
 
 // undefine ugly logf macro from avr's math.h
 // this fix compilation errors on AtmelAVR platforms
@@ -80,31 +79,35 @@
 #define LOG_MASK(pri)  (1 << (pri))	/* mask for one priority */
 #define LOG_UPTO(pri)  ((1 << ((pri)+1)) - 1)	/* all priorities through pri */
 
+using timestampFunc = void(*)(char* timestamp, size_t size);
+using sdIds = std::map<const char*, map<const char*, char*>>;
+
 class Syslog {
   private:
-    UDP* _client;
+    Stream* _fh; //The stream handle that we write/print data out on
     uint8_t _protocol;
-    IPAddress _ip;
-    const char* _server;
-    uint16_t _port;
-    const char* _deviceHostname;
     const char* _appName;
     uint16_t _priDefault;
+    uint16_t _logLevel;;
     uint8_t _priMask = 0xff;
+    timestampFunc _tfunc; //Timestamp function
 
-    bool _sendLog(uint16_t pri, const char *message);
-    bool _sendLog(uint16_t pri, const __FlashStringHelper *message);
+    bool _sendHeader(uint16_t pri, const char* procid, const char* msgid);
+    bool _sendSds(sdIds* sds);
+    bool _sendLog(uint16_t pri, const char *message, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
+    bool _sendLog(uint16_t pri, const __FlashStringHelper *message, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
+    bool _sendLog(uint16_t pri, const char* message, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
+    bool _sendLog(uint16_t pri, const __FlashStringHelper *message, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
+    bool _sendLog(uint16_t pri, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
 
   public:
-    Syslog(UDP &client, uint8_t protocol = SYSLOG_PROTO_IETF);
-    Syslog(UDP &client, const char* server, uint16_t port, const char* deviceHostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
-    Syslog(UDP &client, IPAddress ip, uint16_t port, const char* deviceHostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
+    Syslog(Stream &fh, timestampFunc tfunc = NULL, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
 
-    Syslog &server(const char* server, uint16_t port);
-    Syslog &server(IPAddress ip, uint16_t port);
-    Syslog &deviceHostname(const char* deviceHostname);
+    Syslog &timeStampFunc(timestampFunc tfunc = NULL);
     Syslog &appName(const char* appName);
     Syslog &defaultPriority(uint16_t pri = LOG_KERN);
+    Syslog &setLogLevel(uint16_t pri = LOG_ERR);
+    uint16_t getLogLevel(void);
 
     Syslog &logMask(uint8_t priMask);
 
