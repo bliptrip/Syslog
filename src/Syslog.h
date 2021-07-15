@@ -1,10 +1,12 @@
 #ifndef SYSLOG_H
 #define SYSLOG_H 
 
+#include <map>
 #include <stdarg.h>
 #include <inttypes.h>
 #include <WString.h>
 #include <IPAddress.h>
+#include <Stream.h>
 
 // undefine ugly logf macro from avr's math.h
 // this fix compilation errors on AtmelAVR platforms
@@ -80,33 +82,39 @@
 #define LOG_UPTO(pri)  ((1 << ((pri)+1)) - 1)	/* all priorities through pri */
 
 using timestampFunc = void(*)(char* timestamp, size_t size);
-using sdIds = std::map<const char*, map<const char*, char*>>;
+using sdIds = std::map<const char*, std::map<const char*, const char*>>;
 
 class Syslog {
   private:
     Stream* _fh; //The stream handle that we write/print data out on
     uint8_t _protocol;
+    const char* _deviceHostname;
     const char* _appName;
     uint16_t _priDefault;
-    uint16_t _logLevel;;
+    uint16_t _logLevel;
     uint8_t _priMask = 0xff;
+    uint8_t _includeBOM = true;
     timestampFunc _tfunc; //Timestamp function
 
-    bool _sendHeader(uint16_t pri, const char* procid, const char* msgid);
-    bool _sendSds(sdIds* sds);
-    bool _sendLog(uint16_t pri, const char *message, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
-    bool _sendLog(uint16_t pri, const __FlashStringHelper *message, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
-    bool _sendLog(uint16_t pri, const char* message, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
-    bool _sendLog(uint16_t pri, const __FlashStringHelper *message, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
-    bool _sendLog(uint16_t pri, sdIds* sds, const char* procid = SYSLOG_NILVALUE, const char* msgid = SYSLOG_NILVALUE);
+    inline bool _sendHeader(uint16_t pri, const char* procid, const char* msgid);
+    inline bool _sendSds(sdIds* sds);
+    bool _sendLog(uint16_t pri, sdIds* sds, const char *message, const char* procid, const char* msgid);
+    bool _sendLog(uint16_t pri, sdIds* sds, const __FlashStringHelper *message, const char* procid, const char* msgid);
+    bool _sendLog(uint16_t pri, const char* message, const char* procid, const char* msgid);
+    bool _sendLog(uint16_t pri, const __FlashStringHelper *message, const char* procid, const char* msgid);
+    bool _sendLog(uint16_t pri, sdIds* sds, const char* procid, const char* msgid);
+    bool _sendLog(uint16_t pri, const __FlashStringHelper *message);
+    bool _sendLog(uint16_t pri, const char* message);
+    bool _sendLog(uint16_t pri, sdIds* sds);
 
   public:
-    Syslog(Stream &fh, timestampFunc tfunc = NULL, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
+    Syslog(Stream *fh, timestampFunc tfunc = NULL, const char* hostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
 
-    Syslog &timeStampFunc(timestampFunc tfunc = NULL);
+    Syslog &timeStampFunc(timestampFunc tfunc);
+    Syslog &includeBOM(bool _include);
     Syslog &appName(const char* appName);
-    Syslog &defaultPriority(uint16_t pri = LOG_KERN);
-    Syslog &setLogLevel(uint16_t pri = LOG_ERR);
+    Syslog &defaultPriority(uint16_t pri);
+    Syslog &setLogLevel(uint16_t pri);
     uint16_t getLogLevel(void);
 
     Syslog &logMask(uint8_t priMask);
@@ -114,6 +122,9 @@ class Syslog {
     bool log(uint16_t pri, const __FlashStringHelper *message);
     bool log(uint16_t pri, const String &message);
     bool log(uint16_t pri, const char *message);
+    bool log(uint16_t pri, sdIds* sds);
+    bool log(uint16_t pri, sdIds* sds, const char* message);
+    bool log(uint16_t pri, sdIds* sds, const __FlashStringHelper *message);
 
     bool vlogf(uint16_t pri, const char *fmt, va_list args) __attribute__((format(printf, 3, 0)));
     bool vlogf_P(uint16_t pri, PGM_P fmt_P, va_list args) __attribute__((format(printf, 3, 0)));
