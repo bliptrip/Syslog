@@ -6,15 +6,19 @@
 
 // Public Methods //////////////////////////////////////////////////////////////
 
-
-Syslog::Syslog(Stream *fh, timestampFunc tfunc, const char* hostname, const char* appName, uint16_t logLevel, uint16_t priDefault, uint8_t protocol) {
-  this->_fh = fh;
+Syslog::Syslog(Stream **fhs, uint8_t num_fh, timestampFunc tfunc, const char* hostname, const char* appName, uint16_t logLevel, uint16_t priDefault, uint8_t protocol) {
+  this->_fhs = fhs;
+  this->_fhl = num_fh; //Only one file handle
   this->_protocol = protocol;
   this->_deviceHostname = hostname;
   this->_appName = (appName == NULL) ? SYSLOG_NILVALUE : appName;
   this->_priDefault = priDefault;
   this->_tfunc = tfunc;
   this->setLogLevel(logLevel);
+}
+
+Syslog::Syslog(Stream **fh, timestampFunc tfunc, const char* hostname, const char* appName, uint16_t logLevel, uint16_t priDefault, uint8_t protocol) {
+    Syslog::Syslog(fh, (uint8_t)1, tfunc, hostname, appName, logLevel, priDefault, protocol);
 }
 
 Syslog &Syslog::timeStampFunc(timestampFunc tfunc) {
@@ -183,6 +187,7 @@ bool Syslog::log(const char *message) {
 // Private Methods /////////////////////////////////////////////////////////////
 
 inline bool Syslog::_sendHeader(uint16_t pri, const char* procid, const char* msgid) {
+  Stream _fh;
   char timestampBuf[40];
 
   // Check priority against priMask values.
@@ -196,30 +201,33 @@ inline bool Syslog::_sendHeader(uint16_t pri, const char* procid, const char* ms
 
   // IETF Doc: https://tools.ietf.org/html/rfc5424
   // BSD Doc: https://tools.ietf.org/html/rfc3164
-  this->_fh->print('<');
-  this->_fh->print(pri);
-  if (this->_protocol == SYSLOG_PROTO_IETF) {
-    this->_fh->print(F(">1 "));
-    if( NULL == this->_tfunc ) {
-        this->_fh->print(F(SYSLOG_NILVALUE));
+  for( int i = 0; i < this->_fhl; i++ ) {
+    _fh = this->_fhs[i];
+    _fh->print('<');
+    _fh->print(pri);
+    if (this->_protocol == SYSLOG_PROTO_IETF) {
+        _fh->print(F(">1 "));
+        if( NULL == this->_tfunc ) {
+            _fh->print(F(SYSLOG_NILVALUE));
+        } else {
+            this->_tfunc(timestampBuf, (size_t)sizeof(timestampBuf));
+        }
     } else {
-        this->_tfunc(timestampBuf, (size_t)sizeof(timestampBuf));
+        _fh->print(F(">"));
     }
-  } else {
-    this->_fh->print(F(">"));
-  }
-  this->_fh->print(' ');
-  this->_fh->print(this->_deviceHostname);
-  this->_fh->print(' ');
-  this->_fh->print(this->_appName);
-  if (this->_protocol == SYSLOG_PROTO_IETF) {
-    this->_fh->print(" ");
-    this->_fh->print(procid);
-    this->_fh->print(" ");
-    this->_fh->print(msgid);
-    this->_fh->print(" ");
-  } else {
-    this->_fh->print(F("[0]: "));
+    _fh->print(' ');
+    _fh->print(this->_deviceHostname);
+    _fh->print(' ');
+    _fh->print(this->_appName);
+    if (this->_protocol == SYSLOG_PROTO_IETF) {
+        _fh->print(" ");
+        _fh->print(procid);
+        _fh->print(" ");
+        _fh->print(msgid);
+        _fh->print(" ");
+    } else {
+        _fh->print(F("[0]: "));
+    }
   }
 
   return true;
@@ -227,41 +235,53 @@ inline bool Syslog::_sendHeader(uint16_t pri, const char* procid, const char* ms
 
 //Send structured data
 inline bool Syslog::_sendSds(sdIds* sds) {
-    if( (NULL == sds) || (sds->empty()) ) {
-        this->_fh->print(F(SYSLOG_NILVALUE));
-    } else {
-        for (const auto& [sdId, sdEls] : *sds) {
-            if( !sdEls.empty() ) {
-                this->_fh->print(F("["));
-                this->_fh->print(sdId);
-                for (const auto& [sdPName, sdPValue] : sdEls) {
-                    this->_fh->print(F(" "));
-                    this->_fh->print(sdPName);
-                    this->_fh->print(F("=\""));
-                    this->_fh->print(sdPValue);
-                    this->_fh->print(F("\""));
+    Stream* _fh;
+
+    for( int i = 0; i < this->_fhl; i++ ) {
+        _fh = this->_fhs[i];
+        if( (NULL == sds) || (sds->empty()) ) {
+            _fh->print(F(SYSLOG_NILVALUE));
+        } else {
+            for (const auto& [sdId, sdEls] : *sds) {
+                if( !sdEls.empty() ) {
+                    _fh->print(F("["));
+                    _fh->print(sdId);
+                    for (const auto& [sdPName, sdPValue] : sdEls) {
+                        _fh->print(F(" "));
+                        _fh->print(sdPName);
+                        _fh->print(F("=\""));
+                        _fh->print(sdPValue);
+                        _fh->print(F("\""));
+                    }
+                    _fh->print("]");
                 }
-                this->_fh->print("]");
             }
         }
+        _fh->print(F(" "));
     }
-    this->_fh->print(F(" "));
 
     return(true);
 }
 
 bool Syslog::_sendLog(uint16_t pri, sdIds* sds, const char *message, const char* procid, const char* msgid) {
   bool result;
+  Stream* _fh;
 
   result = _sendHeader(pri, procid, msgid);
   if( false != result ) {
     if (this->_protocol == SYSLOG_PROTO_IETF) {
         _sendSds(sds);
         if( (this->_includeBOM == true) && (strlen(message) != 0) ) {
-            this->_fh->print(F("\xEF\xBB\xBF")); //No structured data
+            for( int i = 0; i < this->_fhl; i++ ) {
+                _fh = this->_fhs[i];
+                _fh->print(F("\xEF\xBB\xBF")); //No structured data
+            }
         }
     }
-    this->_fh->print(message);
+    for( int i = 0; i < this->_fhl; i++ ) {
+        _fh = this->_fhs[i];
+        _fh->print(message);
+    }
   }
 
   return(result);

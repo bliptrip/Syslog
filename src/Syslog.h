@@ -86,7 +86,8 @@ using sdIds = std::map<const char*, std::map<const char*, const char*>>;
 
 class Syslog {
   private:
-    Stream* _fh; //The stream handle that we write/print data out on
+    Stream** _fhs; //The stream handles that we write/print data out on
+    uint8_t _fhl;
     uint8_t _protocol;
     const char* _deviceHostname;
     const char* _appName;
