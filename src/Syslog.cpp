@@ -18,7 +18,7 @@ Syslog::Syslog(Stream **fhs, uint8_t num_fh, timestampFunc tfunc, const char* ho
 }
 
 Syslog::Syslog(Stream **fh, timestampFunc tfunc, const char* hostname, const char* appName, uint16_t logLevel, uint16_t priDefault, uint8_t protocol) {
-    Syslog::Syslog(fh, (uint8_t)1, tfunc, hostname, appName, logLevel, priDefault, protocol);
+    Syslog(fh, (uint8_t)1, tfunc, hostname, appName, logLevel, priDefault, protocol);
 }
 
 Syslog &Syslog::timeStampFunc(timestampFunc tfunc) {
@@ -187,7 +187,7 @@ bool Syslog::log(const char *message) {
 // Private Methods /////////////////////////////////////////////////////////////
 
 inline bool Syslog::_sendHeader(uint16_t pri, const char* procid, const char* msgid) {
-  Stream _fh;
+  Stream* _fh;
   char timestampBuf[40];
 
   // Check priority against priMask values.

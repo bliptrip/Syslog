@@ -109,7 +109,8 @@ class Syslog {
     bool _sendLog(uint16_t pri, sdIds* sds);
 
   public:
-    Syslog(Stream *fh, timestampFunc tfunc = NULL, const char* hostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
+    Syslog(Stream **fhs, uint8_t num_fh, timestampFunc tfunc = NULL, const char* hostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
+    Syslog(Stream **fh, timestampFunc tfunc = NULL, const char* hostname = SYSLOG_NILVALUE, const char* appName = SYSLOG_NILVALUE, uint16_t logLevel = LOG_ERR, uint16_t priDefault = LOG_KERN, uint8_t protocol = SYSLOG_PROTO_IETF);
 
     Syslog &timeStampFunc(timestampFunc tfunc);
     Syslog &includeBOM(bool _include);
