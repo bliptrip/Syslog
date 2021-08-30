@@ -114,6 +114,7 @@ class Syslog {
 
     Syslog &timeStampFunc(timestampFunc tfunc);
     Syslog &includeBOM(bool _include);
+    Syslog &hostname(const char* deviceHostname);
     Syslog &appName(const char* appName);
     Syslog &defaultPriority(uint16_t pri);
     Syslog &setLogLevel(uint16_t pri);

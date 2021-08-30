@@ -31,6 +31,11 @@ Syslog &Syslog::includeBOM(bool _include) {
   return *this;
 }
 
+Syslog &Syslog::hostname(const char* deviceHostname) {
+  this->_deviceHostname = (deviceHostname == NULL) ? SYSLOG_NILVALUE : deviceHostname;
+  return *this;
+}
+
 Syslog &Syslog::appName(const char* appName) {
   this->_appName = (appName == NULL) ? SYSLOG_NILVALUE : appName;
   return *this;
