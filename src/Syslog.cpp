@@ -286,6 +286,7 @@ bool Syslog::_sendLog(uint16_t pri, sdIds* sds, const char *message, const char*
     for( int i = 0; i < this->_fhl; i++ ) {
         _fh = this->_fhs[i];
         _fh->print(message);
+        _fh->flush();
     }
   }
 
