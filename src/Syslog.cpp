@@ -216,6 +216,7 @@ inline bool Syslog::_sendHeader(uint16_t pri, const char* procid, const char* ms
             _fh->print(F(SYSLOG_NILVALUE));
         } else {
             this->_tfunc(timestampBuf, (size_t)sizeof(timestampBuf));
+            _fh->print(timestampBuf);
         }
     } else {
         _fh->print(F(">"));
